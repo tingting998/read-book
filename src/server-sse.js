@@ -128,18 +128,11 @@ async function route(req, res) {
     return;
   }
 
-  const protectedRoute =
-    Boolean(authToken) ||
-    url.pathname.startsWith("/api/") ||
-    url.pathname === "/mcp" ||
-    url.pathname === "/sse" ||
-    url.pathname === "/messages" ||
-    url.pathname === "/health";
-
-  if (protectedRoute && !authorized(req, url)) {
-    sendUnauthorized(req, res);
-    return;
-  }
+  // /mcp endpoint skips token auth — some MCP SDKs send non-standard Authorization
+if (authToken && url.pathname !== "/mcp" && !authorized(req, url)) {
+  sendUnauthorized(req, res);
+  return;
+}
 
   if (url.pathname.startsWith("/api/")) {
     return handleApi(req, res, url, { maxBodyBytes });
