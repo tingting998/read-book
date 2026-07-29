@@ -151,8 +151,13 @@ async function route(req, res) {
     }
 
     try {
-      const response = await handle(message);
-      sendMcpJson(res, 200, response || { accepted: true });
+  const response = await handle(message);
+  if (response) {
+    sendMcpJson(res, 200, response);
+  } else {
+    res.writeHead(202, { "content-type": "application/json; charset=utf-8" });
+    res.end();
+  }
     } catch (error) {
       sendMcpJson(res, 200, rpcError(message?.id ?? null, -32000, error.message || String(error)));
     }
