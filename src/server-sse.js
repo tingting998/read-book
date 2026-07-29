@@ -48,12 +48,8 @@ function setAuthCookie(res, token) {
 }
 
 function authorized(req, url) {
-  // 调试：把请求头输出到日志
-  process.stderr.write(`[AUTH DEBUG] url=${req.url} auth="${req.headers.authorization || '(none)'}"\n`);
-  
   if (!authToken) return true;
-  const auth = (req.headers.authorization || "").trim();
-  if (auth === `Bearer ${authToken}` || auth === authToken) return true;
+  if (req.headers.authorization === `Bearer ${authToken}`) return true;
   if (url.searchParams.get("token") === authToken) return true;
   return decodeURIComponent(cookieToken(req)) === authToken;
 }
@@ -111,6 +107,43 @@ async function route(req, res) {
   }
 
   const url = new URL(req.url || "/", `http://${req.headers.host || `${host}:${port}`}`);
+
+  // ---- /mcp POST 在最前面，完全绕过认证 ----
+  if (req.method === "POST" && url.pathname === "/mcp") {
+    let message;
+    try {
+      message = await readBody(req, { maxBytes: maxBodyBytes, allowEmpty: false });
+    } catch (error) {
+      sendMcpJson(res, 400, { error: error.message || "Invalid JSON body" });
+      return;
+    }
+
+    try {
+      const response = await handle(message);
+      if (response) {
+        sendMcpJson(res, 200, response);
+      } else {
+        res.writeHead(202, { "content-type": "application/json; charset=utf-8" });
+        res.end();
+      }
+    } catch (error) {
+      sendMcpJson(res, 200, rpcError(message?.id ?? null, -32000, error.message || String(error)));
+    }
+    return;
+  }
+
+  // ---- /mcp GET ----
+  if (req.method === "GET" && url.pathname === "/mcp") {
+    res.writeHead(405, {
+      allow: "POST",
+      "content-type": "application/json; charset=utf-8",
+      "mcp-protocol-version": protocolVersion,
+    });
+    res.end(JSON.stringify({ error: "Method Not Allowed", expected: "POST JSON-RPC" }, null, 2));
+    return;
+  }
+  // ---- 以上 /mcp 完全绕过后续所有认证 ----
+
   if (authToken && url.searchParams.get("token") === authToken) {
     setAuthCookie(res, authToken);
     url.searchParams.delete("token");
@@ -128,47 +161,21 @@ async function route(req, res) {
     return;
   }
 
-  // /mcp endpoint skips token auth — some MCP SDKs send non-standard Authorization
-if (url.pathname !== "/mcp" && !authorized(req, url)) {
-  sendUnauthorized(req, res);
-  return;
-}
+  // 以下是需要认证的路由
+  const protectedRoute =
+    Boolean(authToken) ||
+    url.pathname.startsWith("/api/") ||
+    url.pathname === "/sse" ||
+    url.pathname === "/messages" ||
+    url.pathname === "/health";
+
+  if (protectedRoute && !authorized(req, url)) {
+    sendUnauthorized(req, res);
+    return;
+  }
 
   if (url.pathname.startsWith("/api/")) {
     return handleApi(req, res, url, { maxBodyBytes });
-  }
-
-  if (req.method === "POST" && url.pathname === "/mcp") {
-    let message;
-    try {
-      message = await readBody(req, { maxBytes: maxBodyBytes, allowEmpty: false });
-    } catch (error) {
-      sendMcpJson(res, 400, { error: error.message || "Invalid JSON body" });
-      return;
-    }
-
-    try {
-  const response = await handle(message);
-  if (response) {
-    sendMcpJson(res, 200, response);
-  } else {
-    res.writeHead(202, { "content-type": "application/json; charset=utf-8" });
-    res.end();
-  }
-    } catch (error) {
-      sendMcpJson(res, 200, rpcError(message?.id ?? null, -32000, error.message || String(error)));
-    }
-    return;
-  }
-
-  if (req.method === "GET" && url.pathname === "/mcp") {
-    res.writeHead(405, {
-      allow: "POST",
-      "content-type": "application/json; charset=utf-8",
-      "mcp-protocol-version": protocolVersion,
-    });
-    res.end(JSON.stringify({ error: "Method Not Allowed", expected: "POST JSON-RPC" }, null, 2));
-    return;
   }
 
   if (req.method === "GET" && url.pathname === "/sse") {
