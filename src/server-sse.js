@@ -48,6 +48,9 @@ function setAuthCookie(res, token) {
 }
 
 function authorized(req, url) {
+  // 调试：把请求头输出到日志
+  process.stderr.write(`[AUTH DEBUG] url=${req.url} auth="${req.headers.authorization || '(none)'}"\n`);
+  
   if (!authToken) return true;
   const auth = (req.headers.authorization || "").trim();
   if (auth === `Bearer ${authToken}` || auth === authToken) return true;
