@@ -49,7 +49,8 @@ function setAuthCookie(res, token) {
 
 function authorized(req, url) {
   if (!authToken) return true;
-  if (req.headers.authorization === `Bearer ${authToken}`) return true;
+  const auth = (req.headers.authorization || "").trim();
+  if (auth === `Bearer ${authToken}` || auth === authToken) return true;
   if (url.searchParams.get("token") === authToken) return true;
   return decodeURIComponent(cookieToken(req)) === authToken;
 }
