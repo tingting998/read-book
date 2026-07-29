@@ -129,7 +129,7 @@ async function route(req, res) {
   }
 
   // /mcp endpoint skips token auth — some MCP SDKs send non-standard Authorization
-if (authToken && url.pathname !== "/mcp" && !authorized(req, url)) {
+if (url.pathname !== "/mcp" && !authorized(req, url)) {
   sendUnauthorized(req, res);
   return;
 }
